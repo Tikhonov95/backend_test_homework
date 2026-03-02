@@ -1,25 +1,13 @@
-"""
-Snake game (OOP version) for Yandex Practicum.
-
-Rules:
-- Snake moves continuously (cannot stop or reverse instantly).
-- Eating an apple increases snake length by 1.
-- Crossing borders wraps to the opposite side.
-- Collision with itself resets the game.
-"""
+"""Snake game (OOP version) for Practicum sprint project."""
 
 from __future__ import annotations
 
 import random
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import Iterable
 
 import pygame
 
-
-# =========================
-# Settings
-# =========================
 SCREEN_WIDTH = 640
 SCREEN_HEIGHT = 480
 CELL_SIZE = 20
@@ -34,139 +22,136 @@ GREEN = (0, 255, 0)
 RED = (255, 0, 0)
 
 
-Point = Tuple[int, int]
+Direction = tuple[int, int]
+
+
+DIRECTION_UP: Direction = (0, -1)
+DIRECTION_DOWN: Direction = (0, 1)
+DIRECTION_LEFT: Direction = (-1, 0)
+DIRECTION_RIGHT: Direction = (1, 0)
+
+OPPOSITE = {
+    DIRECTION_UP: DIRECTION_DOWN,
+    DIRECTION_DOWN: DIRECTION_UP,
+    DIRECTION_LEFT: DIRECTION_RIGHT,
+    DIRECTION_RIGHT: DIRECTION_LEFT,
+}
 
 
 @dataclass
 class GameObject:
-    """Base class for game objects."""
-    position: Point
-    body_color: Tuple[int, int, int]
+    """Base game object placed on the grid."""
+
+    position: tuple[int, int]
+    body_color: tuple[int, int, int]
 
     def draw(self, surface: pygame.Surface) -> None:
-        """Draw the object on the surface."""
+        """Draw the object on a surface."""
         raise NotImplementedError
 
 
 class Apple(GameObject):
-    """Apple object that appears at random positions on the grid."""
+    """Apple object that appears on random free cells."""
 
     def __init__(self) -> None:
         super().__init__(position=(0, 0), body_color=RED)
-        self.randomize_position(exclude_positions=[])
+        self.randomize_position(exclude_positions=())
 
-    def randomize_position(self, exclude_positions: List[Point]) -> None:
-        """Set apple position to a random free cell not occupied by the snake."""
-        all_cells = [
-            (x * CELL_SIZE, y * CELL_SIZE)
-            for x in range(GRID_WIDTH)
-            for y in range(GRID_HEIGHT)
-        ]
-        free_cells = [cell for cell in all_cells if cell not in exclude_positions]
-        self.position = random.choice(free_cells) if free_cells else (0, 0)
+    def randomize_position(
+        self,
+        exclude_positions: Iterable[tuple[int, int]],
+    ) -> None:
+        """Move apple to a random cell, avoiding snake cells."""
+        exclude = set(exclude_positions)
+        while True:
+            x = random.randrange(GRID_WIDTH) * CELL_SIZE
+            y = random.randrange(GRID_HEIGHT) * CELL_SIZE
+            if (x, y) not in exclude:
+                self.position = (x, y)
+                return
 
     def draw(self, surface: pygame.Surface) -> None:
-        """Draw the apple as a filled cell."""
-        rect = pygame.Rect(self.position[0], self.position[1], CELL_SIZE, CELL_SIZE)
+        """Draw apple as a filled square."""
+        rect = pygame.Rect(self.position, (CELL_SIZE, CELL_SIZE))
         pygame.draw.rect(surface, self.body_color, rect)
 
 
 class Snake(GameObject):
-    """Snake object that moves on the grid and grows after eating apples."""
+    """Snake controlled by the player."""
 
     def __init__(self) -> None:
-        center = ((GRID_WIDTH // 2) * CELL_SIZE, (GRID_HEIGHT // 2) * CELL_SIZE)
-        super().__init__(position=center, body_color=GREEN)
+        start = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
+        super().__init__(position=start, body_color=GREEN)
+        self.length = 1
+        self.positions: list[tuple[int, int]] = [start]
+        self.direction: Direction = DIRECTION_RIGHT
+        self.next_direction: Direction | None = None
 
-        self.length: int = 1
-        self.positions: List[Point] = [center]
-        self.direction: Point = (CELL_SIZE, 0)  # start moving right
-        self.next_direction: Optional[Point] = None
-
-        self._grow_pending: int = 0
-
-    def get_head_position(self) -> Point:
-        """Return the head position of the snake."""
+    def get_head_position(self) -> tuple[int, int]:
+        """Return snake head position."""
         return self.positions[0]
 
     def update_direction(self) -> None:
-        """Apply the buffered direction change (if any)."""
+        """Apply pending direction if it is not opposite."""
         if self.next_direction is None:
             return
-        self.direction = self.next_direction
+        if OPPOSITE[self.direction] != self.next_direction:
+            self.direction = self.next_direction
         self.next_direction = None
 
-    def set_next_direction(self, new_direction: Point) -> None:
-        """Set next direction if it's not the direct opposite of current direction."""
-        opposite = (-self.direction[0], -self.direction[1])
-        if new_direction == opposite:
-            return
-        self.next_direction = new_direction
-
-    def move(self) -> Point:
-        """
-        Move snake by one cell.
-        Returns the tail cell that was removed (for optional clearing).
-        """
+    def move(self) -> None:
+        """Move snake by one cell with wrap-around."""
         head_x, head_y = self.get_head_position()
-        dx, dy = self.direction
+        dir_x, dir_y = self.direction
 
-        new_x = (head_x + dx) % SCREEN_WIDTH
-        new_y = (head_y + dy) % SCREEN_HEIGHT
-        new_head = (new_x, new_y)
+        new_x = (head_x // CELL_SIZE + dir_x) % GRID_WIDTH
+        new_y = (head_y // CELL_SIZE + dir_y) % GRID_HEIGHT
+        new_head = (new_x * CELL_SIZE, new_y * CELL_SIZE)
 
         self.positions.insert(0, new_head)
-
-        removed_tail = self.positions[-1]
-        if self._grow_pending > 0:
-            self._grow_pending -= 1
-            self.length += 1
-            removed_tail = (-1, -1)
-        else:
+        while len(self.positions) > self.length:
             self.positions.pop()
 
-        return removed_tail
-
     def grow(self) -> None:
-        """Increase snake length by 1 on the next move."""
-        self._grow_pending += 1
+        """Increase snake length by one."""
+        self.length += 1
 
     def reset(self) -> None:
-        """Reset snake to the initial state."""
-        center = ((GRID_WIDTH // 2) * CELL_SIZE, (GRID_HEIGHT // 2) * CELL_SIZE)
-        self.position = center
+        """Reset snake to initial state."""
+        start = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
         self.length = 1
-        self.positions = [center]
-        self.direction = (CELL_SIZE, 0)
+        self.positions = [start]
+        self.direction = DIRECTION_RIGHT
         self.next_direction = None
-        self._grow_pending = 0
 
     def draw(self, surface: pygame.Surface) -> None:
-        """Draw all snake segments."""
+        """Draw snake as filled squares."""
         for pos in self.positions:
-            rect = pygame.Rect(pos[0], pos[1], CELL_SIZE, CELL_SIZE)
+            rect = pygame.Rect(pos, (CELL_SIZE, CELL_SIZE))
             pygame.draw.rect(surface, self.body_color, rect)
 
 
 def handle_keys(snake: Snake) -> None:
-    """Handle keyboard events and update snake's next direction."""
+    """Handle keyboard and quit events."""
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             raise SystemExit
 
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_UP:
-                snake.set_next_direction((0, -CELL_SIZE))
-            elif event.key == pygame.K_DOWN:
-                snake.set_next_direction((0, CELL_SIZE))
-            elif event.key == pygame.K_LEFT:
-                snake.set_next_direction((-CELL_SIZE, 0))
-            elif event.key == pygame.K_RIGHT:
-                snake.set_next_direction((CELL_SIZE, 0))
+        if event.type != pygame.KEYDOWN:
+            continue
+
+        if event.key == pygame.K_UP:
+            snake.next_direction = DIRECTION_UP
+        elif event.key == pygame.K_DOWN:
+            snake.next_direction = DIRECTION_DOWN
+        elif event.key == pygame.K_LEFT:
+            snake.next_direction = DIRECTION_LEFT
+        elif event.key == pygame.K_RIGHT:
+            snake.next_direction = DIRECTION_RIGHT
 
 
 def main() -> None:
-    """Run the main game loop."""
+    """Run the game main loop."""
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption("Snake")
@@ -178,22 +163,21 @@ def main() -> None:
 
     while True:
         clock.tick(FPS)
-        screen.fill(BLACK)
-
         handle_keys(snake)
+
         snake.update_direction()
         snake.move()
 
         head = snake.get_head_position()
-
         if head in snake.positions[1:]:
             snake.reset()
             apple.randomize_position(exclude_positions=snake.positions)
-        else:
-            if head == apple.position:
-                snake.grow()
-                apple.randomize_position(exclude_positions=snake.positions)
 
+        if head == apple.position:
+            snake.grow()
+            apple.randomize_position(exclude_positions=snake.positions)
+
+        screen.fill(BLACK)
         snake.draw(screen)
         apple.draw(screen)
         pygame.display.update()
