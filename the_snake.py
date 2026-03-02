@@ -54,6 +54,7 @@ class Apple(GameObject):
     """Apple object that appears on random free cells."""
 
     def __init__(self) -> None:
+        """Create an apple and place it on a free random cell."""
         super().__init__(position=(0, 0), body_color=RED)
         self.randomize_position(exclude_positions=())
 
@@ -80,6 +81,7 @@ class Snake(GameObject):
     """Snake controlled by the player."""
 
     def __init__(self) -> None:
+        """Create a snake in the initial position."""
         start = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
         super().__init__(position=start, body_color=GREEN)
         self.length = 1
