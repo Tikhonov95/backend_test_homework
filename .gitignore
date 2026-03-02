@@ -1,0 +1,5 @@
+snake_project/.venv/
+snake_project/__pycache__/
+**/__pycache__/
+*.pyc
+.vscode/
